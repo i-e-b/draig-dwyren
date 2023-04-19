@@ -1,0 +1,33 @@
+﻿.lineText {
+    font: 0.5em sans-serif;
+}
+
+.boxText {
+    font: 0.75em sans-serif;
+    display: table-cell;
+}
+
+.boxTextSmall {
+    font: 0.25em sans-serif;
+    display: table-cell;
+}
+
+textPath {
+    text-anchor: middle;
+}
+
+.line {
+    fill: none;
+    stroke-width: 1px;
+    stroke: #888;
+}
+
+.arrowHead {
+    fill: #888;
+}
+
+rect {
+    fill: #eef;
+    stroke-width: 1px;
+    stroke: #888;
+}

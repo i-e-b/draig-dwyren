@@ -1,0 +1,1 @@
+The SVG rendering code should end up in here

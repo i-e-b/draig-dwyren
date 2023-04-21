@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using DraigCore.Internal;
+using SkinnyJson;
 using Tag;
 
 namespace DraigCore.Rendering;
@@ -80,6 +81,7 @@ namespace DraigCore.Rendering;
 public static class DiagramToSvg
 {
     private const double MaxPinValue = (double)int.MaxValue;
+    private const double MinPinValue = (double)int.MinValue;
     private static string Clean(string msg)
     {
         return msg
@@ -122,6 +124,13 @@ public static class DiagramToSvg
         foreach (var line in lines)
         {
             var result = HandleCommand(line, pins, state);
+            
+            // For testing, spit out the commands and state
+            //Console.WriteLine(line);
+            //Console.WriteLine(Json.Freeze(pins));
+            //Console.WriteLine(Json.Freeze(state));
+            
+            
             if (string.IsNullOrEmpty(result)) continue;
             
             content.Append(result);
@@ -279,10 +288,11 @@ public static class DiagramToSvg
         if (cmdArray.Length() < 2) throw new Exception($"Pin group move to has no elements: '{cmdArray}'");
         var xoffs = MaxPinValue;
         var yoffs = MaxPinValue;
-        var xmax = MaxPinValue;
-        var ymax = MaxPinValue;
         var xmin = MaxPinValue;
         var ymin = MaxPinValue;
+        
+        var xmax = MinPinValue;
+        var ymax = MinPinValue;
 
         var basePinName = cmdArray.RemoveFirst();
         if (!pins.ContainsKey(basePinName)) throw new Exception($"MoveTo -- base pin not defined '{basePinName }'; '{cmdArray}'");
@@ -512,7 +522,7 @@ public static class DiagramToSvg
         var result = $"<path {anchor}{pathStyle} class=\"line\" id=\"{lineId}\" d=\"M{p1.x},{p1.y}L{p2.x},{p2.y}\" />";
 
         if (text.Length > 0) {
-            text = text.Replace("_", " &nbsp;");
+            text = text.Replace("_", "&#160;"); // &nbsp; for XML
             result += $"<text dy=\"-2\" {dx}{textTransform} ><textPath xlink:href=\"#{lineId}\" startOffset=\"50%\" class=\"lineText\">{text}</textPath></text>";
         }
 
@@ -590,7 +600,8 @@ public static class DiagramToSvg
             case "group":
                 return translate(command, state);
             default:
-                return ""; // invalid
+                throw new Exception($"Invalid command: '{cmdStr}'");
+                //return ""; // invalid
         }
     }
 

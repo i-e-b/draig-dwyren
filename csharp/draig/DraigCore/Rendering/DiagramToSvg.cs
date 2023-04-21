@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using DraigCore.Internal;
 using Tag;
 
@@ -418,46 +419,67 @@ public static class DiagramToSvg
         var bottom = Math.Max(p1.Y, p2.Y);
         var w = right - left;
         var h = bottom - top;
-
-        var style = state.BoxColor is null ? "" : $" style=\"fill: #{state.BoxColor}\" ";
-
-        var result = $"<rect x=\"{left}\" y=\"{top}\" width=\"{w}\" height=\"{h}\"{style}/>";
-
-        if (text.Length() < 1) return result;
-
-        // This horrendous mess is the only reliable way I found to get
-        // centred, wrapping text to look nice
-        result +=
-            $"<foreignObject x=\"{left}\" y=\"{top}\" width=\"{w}\" height=\"{h}\" transform=\"translate(0,0)\">" +
-            $"<xhtml:div style=\"display: table; height: {h}px; margin: auto; padding: 0 1px 0 1px;\">";
-
+        
         var txtClass = small ? "boxTextSmall" : "boxText";
-        var colWidth = w / cols;
-        var textLen = text.Length();
-        var firstRow = cols > 1;
+        var boxStyle = state.BoxColor is null ? "" : $"fill: #{state.BoxColor}";
+        return TextBoxCentred(boxStyle, txtClass, left, top, w, h, cols, text.ToArray()).ToString();
+    }
+    
+    /// <summary>
+    /// Draw a rectangle, with centred text.
+    /// If more than one 'cell' is given, the text is arranged into a table.
+    /// </summary>
+    private static TagContent TextBoxCentred(string boxStyle, string textStyle, double left, double top, double width, double height, double columns, params string[] cells)
+    {
+        var result = T.g();
+        
+        if (boxStyle.Length > 0) result.Add(T.g("rect/",  "x",$"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}", "style",boxStyle));
+        else result.Add(T.g("rect/",  "x",$"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}"));
+        
+        if (cells.Length < 1) return result; // no text to display
+        
+        var tableContent = T.g();
+        if (columns < 1) columns = (int)Math.Sqrt(cells.Length);
+        var remainingCols = columns;
+        var row = T.g("xhtml:div", "style","display:table-row");
+        var colWidth = width / columns;
+        var firstRow = true;
 
-        // TODO: replace with T.g (see test app)
-        while (text.Length() > 0)
+        foreach (var cell in cells)
         {
-            var remCols = cols;
-            result += "<xhtml:div style=\"display: table-row\">";
-            while (text.Length() > 0 && remCols-- > 0)
+            // check if we need new row
+            if (remainingCols < 1) // new row
             {
-                var edge = remCols > 0 ? "border-right:thin solid rgb(0,0,0, .4); " : "";
-                if (cols > 1) edge += "padding: 0 .3em 0 .3em; ";
-                if (firstRow) edge += "border-bottom:thin solid rgb(0,0,0, .4); ";
-                if (textLen < 2) edge = "";
-                result += $"<xhtml:div style=\"display: table-cell; {edge}vertical-align: middle;\">" +
-                          $"<xhtml:div style=\"color:black; text-align:center; width: {colWidth}px;\" class=\"{txtClass}\">{text.RemoveFirst()}</xhtml:div>" +
-                          "</xhtml:div>";
+                tableContent.Add(row);
+                row = T.g("xhtml:div", "style","display:table-row");
+                remainingCols = columns;
+                firstRow = false;
+            }
+            remainingCols--;
+            
+            // style cell borders
+            var edge = new StringBuilder();;
+            if (cells.Length > 1)
+            {
+                if (remainingCols > 0) edge.Append("border-right:thin solid rgb(0,0,0, .4); ");
+                if (columns > 1) edge.Append("padding: 0 .3em 0 .3em; ");
+                if (firstRow) edge.Append("border-bottom:thin solid rgb(0,0,0, .4); ");
             }
 
-            firstRow = false;
-            result += "</xhtml:div>";
+            // add cell to row
+            row.Add(T.g("xhtml:div", "style",$"display: table-cell;{edge} vertical-align: middle;")[
+                T.g("xhtml:div", "style",$"color:black; text-align:center; width: {colWidth}px;", "class",textStyle)[
+                    cell
+                ]
+            ]);
         }
+        tableContent.Add(row);
 
-        result += "</xhtml:div>" +
-                  "</foreignObject>";
+        result.Add(T.g("foreignObject", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}", "transform", "translate(0,0)")[
+            T.g("xhtml:div", "style", $"display: table; height: {height}px; margin: auto; padding: 0 1px 0 1px;")[
+                tableContent
+            ]
+        ]);
 
         return result;
     }
@@ -559,6 +581,7 @@ public static class DiagramToSvg
             anchor = rightToLeft ? " marker-start=\"url(#arrow_r2l)\" " : " marker-end=\"url(#arrow_l2r)\" ";
         }
 
+        // TODO: T.g
         var result = $"<path {anchor}{pathStyle} class=\"line\" id=\"{lineId}\" d=\"M{p1.X},{p1.Y}L{p2.X},{p2.Y}\" />";
 
         if (text.Length > 0)

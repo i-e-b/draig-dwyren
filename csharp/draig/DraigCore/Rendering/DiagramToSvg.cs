@@ -1,5 +1,4 @@
-﻿using System.Globalization;
-using System.Text;
+﻿using System.Text;
 using DraigCore.Internal;
 using Tag;
 
@@ -458,7 +457,7 @@ public static class DiagramToSvg
             remainingCols--;
             
             // style cell borders
-            var edge = new StringBuilder();;
+            var edge = new StringBuilder();
             if (cells.Length > 1)
             {
                 if (remainingCols > 0) edge.Append("border-right:thin solid rgb(0,0,0, .4); ");
@@ -565,34 +564,45 @@ public static class DiagramToSvg
                 X = t.X,
                 Y = t.Y
             };
-            textTransform = "style=\"transform-origin:center;transform-box:fill-box;transform:rotateZ(180deg);\"";
+            textTransform = "transform-origin:center;transform-box:fill-box;transform:rotateZ(180deg);";
         }
-
-        var pathStyle = state.LineColor is null ? "" : $" style=\"stroke:#{state.LineColor}\" ";
 
         var lineId = "curve_" + state.GlobalLineNum;
         state.GlobalLineNum++;
-        var dx = "";
-
-        var anchor = "";
+        var props = new List<string>();
         if (useArrow)
         {
-            dx = rightToLeft ? "dx=\"5\" " : "dx=\"-5\" ";
-            anchor = rightToLeft ? " marker-start=\"url(#arrow_r2l)\" " : " marker-end=\"url(#arrow_l2r)\" ";
+            if (rightToLeft) AddList(props, "marker-start", "url(#arrow_r2l)");
+            else AddList(props, "marker-end", "url(#arrow_l2r)");
         }
+        if (state.LineColor is not null) AddList(props, "style", $"stroke:#{state.LineColor}");
+        AddList(props, "class","line", "id",lineId, "d",$"M{p1.X},{p1.Y}L{p2.X},{p2.Y}");
 
-        // TODO: T.g
-        var result = $"<path {anchor}{pathStyle} class=\"line\" id=\"{lineId}\" d=\"M{p1.X},{p1.Y}L{p2.X},{p2.Y}\" />";
 
+
+        var result = T.g();
+
+        result.Add(T.g("path/", props.ToArray()));
+        
         if (text.Length > 0)
         {
             text = text.Replace("_", "&#160;"); // &nbsp; for XML
-            result +=
-                $"<text dy=\"-2\" {dx}{textTransform} ><textPath xlink:href=\"#{lineId}\" startOffset=\"50%\" class=\"lineText\">{text}</textPath></text>";
+            
+            props.Clear();
+            AddList(props, "dy", "-2");
+            if (useArrow) AddList(props, "dx", (rightToLeft ? "5" : "-5"));
+            if (textTransform.Length > 0) AddList(props, "style", textTransform);
+            result.Add(T.g("text", props.ToArray())[
+                T.g("textPath", "xlink:href", $"#{lineId}", "startOffset", "50%", "class", "lineText")[
+                    text
+                ]
+            ]);
         }
 
-        return result;
+        return result.ToString();
     }
+
+    private static void AddList(List<string> target, params string[] items) => target.AddRange(items);
 
     private static string SetFillColor(Dq<string>? cmdArray, ChartState state)
     {

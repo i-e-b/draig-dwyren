@@ -1,4 +1,5 @@
-﻿using DraigCore.Rendering;
+﻿using System.Diagnostics;
+using DraigCore.Rendering;
 using NUnit.Framework;
 
 namespace Tests;
@@ -64,6 +65,21 @@ public class DiagramRenderingTests
         File.WriteAllText(@"C:\temp\QaD_5.svg", svg);
         
         Assert.That(Reduce(svg), Is.EqualTo(Reduce(ExpectedResult5)));
+    }
+
+    [Test]
+    public void speed_test()
+    {
+        var sw = new Stopwatch();
+        sw.Start();
+        var count = 250;
+        for (int i = 0; i < count; i++)
+        {
+            DiagramToSvg.Render(Diagram4);
+        }
+        sw.Stop();
+        var time = sw.Elapsed.TotalMilliseconds / count;
+        Console.WriteLine($"Render took average of {time}ms");
     }
 
     /// <summary>

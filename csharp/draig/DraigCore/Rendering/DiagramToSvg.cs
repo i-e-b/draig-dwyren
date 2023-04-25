@@ -392,8 +392,7 @@ public static class DiagramToSvg
         return ""; // no markup
     }
 
-    private static string DrawBox(bool splitCells, Dq<string>? cmdArray, Dictionary<string, Vec2d> pins,
-        ChartState state, bool small)
+    private static string DrawBox(bool splitCells, Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
     {
         if (cmdArray is null || cmdArray.Length() < 2) throw new Exception($"Box command too short: '{cmdArray}'");
 
@@ -418,31 +417,553 @@ public static class DiagramToSvg
         var bottom = Math.Max(p1.Y, p2.Y);
         var w = right - left;
         var h = bottom - top;
-        
-        var txtClass = small ? "boxTextSmall" : "boxText";
+
         var boxStyle = state.BoxColor is null ? "" : $"fill: #{state.BoxColor}";
-        return TextBoxCentred(boxStyle, txtClass, left, top, w, h, cols, text.ToArray()).ToString();
+        return TextBoxCentred(boxStyle, small, left, top, w, h, cols, text.ToArray()).ToString();
     }
+
+    private static string DrawPill(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 2) throw new Exception($"Pill command too short: '{cmdArray}'");
+
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"Box -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"Box -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var fill = (state.BoxColor is not null) ? $"#${state.BoxColor}" : "#eef";
+
+        var radius = h / 2;
+        var l = left + radius;
+        var bar = w - (radius * 2);
+
+        var result = T.g();
+        result.Add(T.g("path/", "d",
+            $"M {l} {top} l {bar} 0 a {radius} {radius} 0 0 1 0 {h} l {-bar} 0 a {radius} {radius} 0 0 1 0 {-h} Z",
+            "stroke", "#888", "fill", fill));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoPill(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 5) throw new Exception($"AutoPill command too short: '{cmdArray}'");
+
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoPill -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoPill -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // Pill pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        return DrawPill(cmdArray, pins, state, small);
+    }
+
+    private static string DrawHex(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 2) throw new Exception($"Pill command too short: '{cmdArray}'");
+
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"HexBox -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"HexBox -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var fill = (state.BoxColor is null) ? "#eef" : $"#{state.BoxColor}";
+
+        var radius = h / 2;
+        var l = left + radius;
+        var bar = w - (radius * 2);
+
+        var result = T.g();
+        result.Add(T.g("path", "d",
+            $"M{l} {top} l{bar} 0 l{radius} {radius} l{-radius} {radius} l{-bar} 0 l {-radius} {-radius} l {radius} {-radius} Z",
+            "stroke", "#888", "fill", fill));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoHex(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 5) throw new Exception($"AutoHex command too short: '{cmdArray}'");
+
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoHex -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoHex -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // Hex pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        return DrawHex(cmdArray, pins, state, small);
+    }
+
+    private static string DrawTiltBox(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 3) throw new Exception($"TiltBox command too short: '{cmdArray}'");
+
+        var skew = int.Parse(cmdArray.RemoveFirst());
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"TiltBox -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"TiltBox -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var fill = (state.BoxColor is null) ? "#eef" : $"#{state.BoxColor}";
+
+        var result = T.g();
+        result.Add(T.g("path/", "d", $"M{left + skew} {top} l{w} 0 l {-skew * 2} {h} l {-w} 0 Z", "stroke", "#888",
+            "fill", $"{fill}"));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoTiltBox(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 6) throw new Exception($"AutoTilt command too short: '{cmdArray}'");
+
+        var skew = int.Parse(cmdArray.RemoveFirst());
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoTilt -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoTilt -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // TiltBox pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        cmdArray.AddFirst(skew.ToString());
+        return DrawTiltBox(cmdArray, pins, state, small);
+    }
+
+    private static string DrawTrapBox(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 4) throw new Exception($"TrapBox command too short: '{cmdArray}'");
+
+        var topExpand = int.Parse(cmdArray.RemoveFirst());
+        var bottomExpand = int.Parse(cmdArray.RemoveFirst());
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"TrapBox -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"TrapBox -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var fill = (state.BoxColor is null) ? "#eef" : $"#{state.BoxColor}";
+
+        var result = T.g();
+        result.Add(T.g("path/", "d",
+            $"M{left - topExpand} {top} l {w + (topExpand * 2)} 0 l {bottomExpand - topExpand} {h} l {-w - (bottomExpand * 2)} 0 Z",
+            "stroke", "#888", "fill", fill));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoTrapBox(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 7) throw new Exception($"AutoTrap command too short: '{cmdArray}'");
+
+        var topExpand = int.Parse(cmdArray.RemoveFirst());
+        var bottomExpand = int.Parse(cmdArray.RemoveFirst());
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoTrap -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoTrap -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // Pill pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        cmdArray.AddFirst(bottomExpand.ToString());
+        cmdArray.AddFirst(topExpand.ToString());
+        return DrawTrapBox(cmdArray, pins, state, small);
+    }
+
+    private static string DrawBoxOut(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 3) throw new Exception($"BoxOut command too short: '{cmdArray}'");
+
+        var dir = cmdArray.RemoveFirst().ToLowerInvariant();
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"BoxOut -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"BoxOut -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var shortSide = Math.Min(w, h);
+        var radius = shortSide / 2;
+        var stem = radius / 3;
+        var back = radius - stem;
+        var gap = shortSide / 10;
+
+        var fill = (state.BoxColor is null) ? "#eef" : $"#{state.BoxColor}";
+        var thirdH = (h / 2) - stem;
+        var thirdW = (w / 2) - stem;
+
+        var pathDef = dir switch
+        {
+            "right" => $"M {left} {top} l {w} 0 l 0 {thirdH} l {gap} 0 l 0 {-back} l {radius} {radius} l {-radius} {radius} l 0 {-back} l {-gap} 0 l 0 {thirdH} l {-w} 0 Z",
+            "r" => $"M {left} {top} l {w} 0 l 0 {thirdH} l {gap} 0 l 0 {-back} l {radius} {radius} l {-radius} {radius} l 0 {-back} l {-gap} 0 l 0 {thirdH} l {-w} 0 Z",
+            "left" => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 l 0 {-thirdH} l {-gap} 0 l 0 {back} l {-radius} {-radius} l {radius} {-radius} l 0 {back} l {gap} 0 l 0 {-thirdH} Z",
+            "l" => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 l 0 {-thirdH} l {-gap} 0 l 0 {back} l {-radius} {-radius} l {radius} {-radius} l 0 {back} l {gap} 0 l 0 {-thirdH} Z",
+            "top" => $"M {left} {top} l {thirdW} 0 l 0 {-gap} l {-back} 0 l {radius} {-radius} l {radius} {radius} l {-back} 0 l 0 {gap} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "t" => $"M {left} {top} l {thirdW} 0 l 0 {-gap} l {-back} 0 l {radius} {-radius} l {radius} {radius} l {-back} 0 l 0 {gap} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "up" => $"M {left} {top} l {thirdW} 0 l 0 {-gap} l {-back} 0 l {radius} {-radius} l {radius} {radius} l {-back} 0 l 0 {gap} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "u" => $"M {left} {top} l {thirdW} 0 l 0 {-gap} l {-back} 0 l {radius} {-radius} l {radius} {radius} l {-back} 0 l 0 {gap} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "bottom" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l 0 {gap} l {back} 0 l {-radius} {radius} l {-radius} {-radius} l {back} 0 l 0 {-gap} l {-thirdW} 0 Z",
+            "b" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l 0 {gap} l {back} 0 l {-radius} {radius} l {-radius} {-radius} l {back} 0 l 0 {-gap} l {-thirdW} 0 Z",
+            "down" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l 0 {gap} l {back} 0 l {-radius} {radius} l {-radius} {-radius} l {back} 0 l 0 {-gap} l {-thirdW} 0 Z",
+            "d" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l 0 {gap} l {back} 0 l {-radius} {radius} l {-radius} {-radius} l {back} 0 l 0 {-gap} l {-thirdW} 0 Z",
+            _ => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 Z"
+        };
+
+        var result = T.g();
+        result.Add(T.g("path/", "d", pathDef, "stroke", "#888", "fill", fill));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoBoxOut(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 6) throw new Exception($"AutoBoxOut command too short: '{cmdArray}'");
+
+        var dir = cmdArray.RemoveFirst();
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoBoxOut -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoBoxOut -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        var shortSide = Math.Min(width, height);
+        var radius = shortSide / 2;
+        var gap = shortSide / 10;
+
+        var rOff = (dir is "right" or "r") ? gap + radius : 0;
+        var lOff = (dir is "left" or "l") ? gap + radius : 0;
+        var tOff = (dir is "top" or "t" or "up" or "u") ? gap + radius : 0;
+        var bOff = (dir is "bottom" or "b" or "down" or "d") ? gap + radius : 0;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY - tOff, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX - lOff, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width + rOff, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height + bOff, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // BoxOut dir pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        cmdArray.AddFirst(dir);
+        return DrawBoxOut(cmdArray, pins, state, small);
+    }
+
+    private static string DrawBoxIn(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 3) throw new Exception($"BoxIn command too short: '{cmdArray}'");
+
+        var dir = cmdArray.RemoveFirst().ToLowerInvariant();
+        var pin1 = cmdArray.RemoveFirst();
+        var pin2 = cmdArray.RemoveFirst();
+        var text = Clean(string.Join(" ", cmdArray));
+
+        if (!pins.ContainsKey(pin1)) throw new Exception($"BoxIn -- pin not defined '{pin1}'; '{cmdArray}'");
+        if (!pins.ContainsKey(pin2)) throw new Exception($"BoxIn -- pin not defined '{pin2}'; '{cmdArray}'");
+        var p1 = pins[pin1];
+        var p2 = pins[pin2];
+
+        var top = Math.Min(p1.Y, p2.Y);
+        var left = Math.Min(p1.X, p2.X);
+        var right = Math.Max(p1.X, p2.X);
+        var bottom = Math.Max(p1.Y, p2.Y);
+        var w = right - left;
+        var h = bottom - top;
+
+        var shortSide = Math.Min(w, h);
+        var radius = shortSide / 2;
+        var stem = radius / 5;
+        var back = radius - stem;
+        var gap = shortSide / 8;
+
+        var fill = (state.BoxColor is null) ? "#eef" : $"#{state.BoxColor}";
+
+        var thirdW = (w / 2) - stem;
+        var thirdH = (h / 2) - stem;
+        var pathDef = dir switch
+        {
+            "right" => $"M {left} {top} l {w} 0 l 0 {thirdH} l {back} {-back} l 0 {back} l {gap} 0 l 0 {stem} l 0 {stem} l {-gap} 0 l 0 {back} l {-back} {-back} l 0 {thirdH} l {-w} 0 Z",
+            "r" => $"M {left} {top} l {w} 0 l 0 {thirdH} l {back} {-back} l 0 {back} l {gap} 0 l 0 {stem} l 0 {stem} l {-gap} 0 l 0 {back} l {-back} {-back} l 0 {thirdH} l {-w} 0 Z",
+            "left" => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 l 0 {-thirdH} l {-back} {back} l 0 {-back} l {-gap} 0 l 0 {-stem} l 0 {-stem} l {gap} 0 l 0 {-back} l {back} {back} l 0 {-thirdH} Z",
+            "l" => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 l 0 {-thirdH} l {-back} {back} l 0 {-back} l {-gap} 0 l 0 {-stem} l 0 {-stem} l {gap} 0 l 0 {-back} l {back} {back} l 0 {-thirdH} Z",
+            "top" => $"M {left} {top} l {thirdW} 0 l {-back} {-back} l {back} 0 l 0 {-gap} l {stem} 0 l {stem} 0 l 0 {gap} l {back} 0 l {-back} {back} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "t" => $"M {left} {top} l {thirdW} 0 l {-back} {-back} l {back} 0 l 0 {-gap} l {stem} 0 l {stem} 0 l 0 {gap} l {back} 0 l {-back} {back} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "up" => $"M {left} {top} l {thirdW} 0 l {-back} {-back} l {back} 0 l 0 {-gap} l {stem} 0 l {stem} 0 l 0 {gap} l {back} 0 l {-back} {back} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "u" => $"M {left} {top} l {thirdW} 0 l {-back} {-back} l {back} 0 l 0 {-gap} l {stem} 0 l {stem} 0 l 0 {gap} l {back} 0 l {-back} {back} l {thirdW} 0 l 0 {h} l {-w} 0 Z",
+            "bottom" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l {back} {back} l {-back} 0 l 0 {gap} l {-stem} 0 l {-stem} 0 l 0 {-gap} l {-back} 0 l {back} {-back} l {-thirdW} 0 Z",
+            "b" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l {back} {back} l {-back} 0 l 0 {gap} l {-stem} 0 l {-stem} 0 l 0 {-gap} l {-back} 0 l {back} {-back} l {-thirdW} 0 Z",
+            "down" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l {back} {back} l {-back} 0 l 0 {gap} l {-stem} 0 l {-stem} 0 l 0 {-gap} l {-back} 0 l {back} {-back} l {-thirdW} 0 Z",
+            "d" => $"M {left} {top} l {w} 0 l 0 {h} l {-thirdW} 0 l {back} {back} l {-back} 0 l 0 {gap} l {-stem} 0 l {-stem} 0 l 0 {-gap} l {-back} 0 l {back} {-back} l {-thirdW} 0 Z",
+            _ => $"M {left} {top} l {w} 0 l 0 {h} l {-w} 0 Z"
+        };
+
+        var result = T.g();
+        result.Add(T.g("path/", "d", pathDef, "stroke", "#888", "fill", fill));
+
+        if (text.Length < 1) return result;
+
+        result.Add(OverlayText(text, left, top, w, h, small));
+
+        return result;
+    }
+
+    private static string DrawAutoBoxIn(Dq<string>? cmdArray, Dictionary<string, Vec2d> pins, ChartState state, bool small)
+    {
+        if (cmdArray is null) throw new Exception("Invalid command");
+        if (cmdArray.Length() < 6) throw new Exception($"AutoBoxIn command too short: '{cmdArray}'");
+
+        var dir = cmdArray.RemoveFirst();
+        var pinBaseName = cmdArray.RemoveFirst();
+        var abX = int.Parse(cmdArray.RemoveFirst());
+        var abY = int.Parse(cmdArray.RemoveFirst());
+        var width = int.Parse(cmdArray.RemoveFirst());
+        var height = int.Parse(cmdArray.RemoveFirst());
+        if (width <= 0) throw new Exception($"AutoBoxIn -- invalid width: '{width}'; '{cmdArray}'");
+        if (height <= 0) throw new Exception($"AutoBoxIn -- invalid height: '{height}'; '{cmdArray}'");
+        var halfWidth = width / 2;
+        var halfHeight = height / 2;
+
+        var shortSide = Math.Min(width, height);
+        var radius = (shortSide / 2) + 1;
+
+        var rOff = (dir is "right" or "r") ? radius : 0;
+        var lOff = (dir is "left" or "l") ? radius : 0;
+        var tOff = (dir is "top" or "t" or "up" or "u") ? radius : 0;
+        var bOff = (dir is "bottom" or "b" or "down" or "d") ? radius : 0;
+
+        // create pins, rebuild the command array, then call regular box
+        AddPinInt(pinBaseName + "_tl", abX, abY, pins, state);
+        AddPinInt(pinBaseName + "_t", abX + halfWidth, abY - tOff, pins, state);
+        AddPinInt(pinBaseName + "_tr", abX + width, abY, pins, state);
+
+        AddPinInt(pinBaseName + "_l", abX - lOff, abY + halfHeight, pins, state);
+        AddPinInt(pinBaseName + "_r", abX + width + rOff, abY + halfHeight, pins, state);
+
+        AddPinInt(pinBaseName + "_bl", abX, abY + height, pins, state);
+        AddPinInt(pinBaseName + "_b", abX + halfWidth, abY + height + bOff, pins, state);
+        AddPinInt(pinBaseName + "_br", abX + width, abY + height, pins, state);
+
+        // BoxIn dir pin1 pin2 [text...]
+        cmdArray.AddFirst(pinBaseName + "_br");
+        cmdArray.AddFirst(pinBaseName + "_tl");
+        cmdArray.AddFirst(dir);
+        return DrawBoxIn(cmdArray, pins, state, small);
+    }
+
     
+    private static TagContent OverlayText(string text, double left, double top, double width, double height, bool small)
+    {
+        // This horrendous mess is the only reliable way I found to get
+        // centred, wrapping text to look nice
+        var txtClass = small ? "boxTextSmall" : "boxText";
+        return T.g("foreignObject", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}",
+            "transform", "translate(0,0)")[
+            T.g("xhtml:div", "style", $"display:table;height:{height}px;margin:auto;padding:0 1px 0 1px")[
+                T.g("xhtml:div", "style", "display:table-row")[
+                    T.g("xhtml:div", "style", "display:table-cell;vertical-align:middle")[
+                        T.g("xhtml:div", "style", "color:black; text-align:center;width:100%", "class", txtClass)[
+                            text
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
     /// <summary>
     /// Draw a rectangle, with centred text.
     /// If more than one 'cell' is given, the text is arranged into a table.
     /// </summary>
-    private static TagContent TextBoxCentred(string boxStyle, string textStyle, double left, double top, double width, double height, double columns, params string[] cells)
+    private static TagContent TextBoxCentred(string boxStyle, bool small, double left, double top, double width,
+        double height, double columns, params string[] cells)
     {
         var result = T.g();
-        
-        if (boxStyle.Length > 0) result.Add(T.g("rect/",  "x",$"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}", "style",boxStyle));
-        else result.Add(T.g("rect/",  "x",$"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}"));
-        
+
+        if (boxStyle.Length > 0)
+            result.Add(T.g("rect/", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}", "style",
+                boxStyle));
+        else result.Add(T.g("rect/", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}"));
+
         if (cells.Length < 1) return result; // no text to display
-        
+
+        if (cells.Length == 1) // plain string
+        {
+            result.Add(OverlayText(cells[0], left, top, width, height, small));
+            return result;
+        }
+
         var tableContent = T.g();
         if (columns < 1) columns = (int)Math.Sqrt(cells.Length);
         var remainingCols = columns;
-        var row = T.g("xhtml:div", "style","display:table-row");
+        var row = T.g("xhtml:div", "style", "display:table-row");
         var colWidth = width / columns;
         var firstRow = true;
+        var txtClass = small ? "boxTextSmall" : "boxText";
 
         foreach (var cell in cells)
         {
@@ -450,12 +971,13 @@ public static class DiagramToSvg
             if (remainingCols < 1) // new row
             {
                 tableContent.Add(row);
-                row = T.g("xhtml:div", "style","display:table-row");
+                row = T.g("xhtml:div", "style", "display:table-row");
                 remainingCols = columns;
                 firstRow = false;
             }
+
             remainingCols--;
-            
+
             // style cell borders
             var edge = new StringBuilder();
             if (cells.Length > 1)
@@ -466,15 +988,17 @@ public static class DiagramToSvg
             }
 
             // add cell to row
-            row.Add(T.g("xhtml:div", "style",$"display: table-cell;{edge} vertical-align: middle;")[
-                T.g("xhtml:div", "style",$"color:black; text-align:center; width: {colWidth}px;", "class",textStyle)[
+            row.Add(T.g("xhtml:div", "style", $"display: table-cell;{edge} vertical-align: middle;")[
+                T.g("xhtml:div", "style", $"color:black; text-align:center; width: {colWidth}px;", "class", txtClass)[
                     cell
                 ]
             ]);
         }
+
         tableContent.Add(row);
 
-        result.Add(T.g("foreignObject", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}", "transform", "translate(0,0)")[
+        result.Add(T.g("foreignObject", "x", $"{left}", "y", $"{top}", "width", $"{width}", "height", $"{height}",
+            "transform", "translate(0,0)")[
             T.g("xhtml:div", "style", $"display: table; height: {height}px; margin: auto; padding: 0 1px 0 1px;")[
                 tableContent
             ]
@@ -575,19 +1099,19 @@ public static class DiagramToSvg
             if (rightToLeft) AddList(props, "marker-start", "url(#arrow_r2l)");
             else AddList(props, "marker-end", "url(#arrow_l2r)");
         }
-        if (state.LineColor is not null) AddList(props, "style", $"stroke:#{state.LineColor}");
-        AddList(props, "class","line", "id",lineId, "d",$"M{p1.X},{p1.Y}L{p2.X},{p2.Y}");
 
+        if (state.LineColor is not null) AddList(props, "style", $"stroke:#{state.LineColor}");
+        AddList(props, "class", "line", "id", lineId, "d", $"M{p1.X},{p1.Y}L{p2.X},{p2.Y}");
 
 
         var result = T.g();
 
         result.Add(T.g("path/", props.ToArray()));
-        
+
         if (text.Length > 0)
         {
             text = text.Replace("_", "&#160;"); // &nbsp; for XML
-            
+
             props.Clear();
             AddList(props, "dy", "-2");
             if (useArrow) AddList(props, "dx", (rightToLeft ? "5" : "-5"));
@@ -616,6 +1140,9 @@ public static class DiagramToSvg
         return "";
     }
 
+    /// <summary>
+    /// Core command dispatch
+    /// </summary>
     private static string HandleCommand(string cmdStr, Dictionary<string, Vec2d> pins, ChartState state)
     {
         var command = new Dq<string>(cmdStr.Split(' ', '\t'));
@@ -656,6 +1183,30 @@ public static class DiagramToSvg
                 return DrawBox(false, command, pins, state, true);
             case "table":
                 return DrawBox(true, command, pins, state, false);
+            case "tiltbox":
+                return DrawTiltBox(command, pins, state, false);
+            case "autotiltbox":
+                return DrawAutoTiltBox(command, pins, state, false);
+            case "trapbox":
+                return DrawTrapBox(command, pins, state, false);
+            case "autotrapbox":
+                return DrawAutoTrapBox(command, pins, state, false);
+            case "pill":
+                return DrawPill(command, pins, state, false);
+            case "autopill":
+                return DrawAutoPill(command, pins, state, false);
+            case "hex":
+                return DrawHex(command, pins, state, false);
+            case "autohex":
+                return DrawAutoHex(command, pins, state, false);
+            case "boxout":
+                return DrawBoxOut(command, pins, state, false);
+            case "autoboxout":
+                return DrawAutoBoxOut(command, pins, state, false);
+            case "boxin":
+                return DrawBoxIn(command, pins, state, false);
+            case "autoboxin":
+                return DrawAutoBoxIn(command, pins, state, false);
             case "line":
                 return DrawLine(false, false, command, pins, state);
             case "arrow":
